@@ -1,0 +1,166 @@
+---
+title: "Data 624 HW02"
+author: "Farhana Zahir"
+date: "2/21/2021"
+output:
+  html_document:
+    code_folding: 'show'
+    css: ./style.css
+    toc: yes
+    toc_float: yes
+---
+
+*Textbook: Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia.*
+
+```{r message=FALSE, warning=FALSE}
+# Load packages
+library(fpp2)
+library(tidyverse)
+library(gridExtra)
+```
+
+### Exercise 3.1
+
+***For the following series, find an appropriate Box-Cox transformation in order to stabilize the variance.***
+
+* `usnetelec`
+* `usgdp`
+* `mcopper`
+* `enplanements'`
+
+Function is as below:
+
+```{r}
+
+boxcox_transform = function(timeseries, title){
+  #Plot before transforming
+   x = autoplot(timeseries) + 
+     ggtitle(sprintf("Before: %s", title))+xlab('Year')+ylab('Units')
+  #Find lambda
+   lambda = BoxCox.lambda(timeseries)
+  #plot after transformation
+   x_transformed = autoplot(BoxCox(timeseries, lambda)) +
+                  labs(title = sprintf("Transformed: %s", title), 
+                       subtitle = sprintf("lambda = %0.2f", lambda))+
+                        xlab('Year')+ylab('Units')
+  grid.arrange(x, x_transformed)
+}
+```
+
+Using function on usnetelec
+
+```{r}
+boxcox_transform(usnetelec, 'Annual US Net Electricity Generation')
+```
+
+The data is transformed with a lambda of 0.52. There is no significant change in the variance but the transformed chart does look a little straighter.
+
+Using function on usgdp
+
+```{r}
+boxcox_transform(usgdp, 'Quarterly US GDP')
+```
+
+The data is transformed using a lambda of 0.37 and the chart is less curved than before.
+
+Using function on mcopper
+
+```{r}
+boxcox_transform(mcopper, 'Monthly copper price')
+```
+
+The original data exhibits seasonality and cyclicity. Using a lambda of 0.19, the seasonal variations can be more clearly observed and there is a less prominent spike at the end.
+
+Using function on enplanements
+
+```{r}
+boxcox_transform(enplanements, 'Monthly US Domestic Enplanements')
+```
+
+The data exhibits an upward trend, seasonality,and cycles. With a lambda of 0.23, the variation is more stabilized.
+
+### Exercise 3.2
+
+Why is a Box-Cox transformation unhelpful for the cangas data?
+
+```{r}
+boxcox_transform(cangas, 'Monthly Canadian Gas Production')
+```
+
+The data is transformed using a lambda of 0.58 and shows a little less variation than the original. The seasonal variance is low through the early part of the data, The variance between 1978 and 1988 are a bit higher and again smaller from 1988 through 2005. The seasonal variation increases and decreases and maybe that is why the Box Cox transformation does not make a significant difference. 
+
+### Exercise 3.3 
+
+What Box-Cox transformation would you select for your retail data (from Exercise 3 in Section 2.10)?
+
+```{r}
+retaildata = readxl::read_excel("retail.xlsx", skip = 1)
+myts = ts(retaildata[, 13], frequency = 12, start = c(1982,4))
+boxcox_transform(myts, title = "New South Wales Department Stores")
+```
+
+```{r}
+frequency(myts)
+```
+The data shows an upward trend and a seasonality of frequency 1 year. The seasonal variation increases with time. Using a lambda of 0.12, there is more consistent variation. The consistency can be more clearly seen if we compare the data after 2000 for both the charts. 
+
+### Exercise 3.8
+
+For your retail time series (from Exercise 3 in Section 2.10): 
+
+a. Split the data into two parts using
+
+```{r}
+#Split into train and test
+myts.train = window(myts, end=c(2010,12))
+myts.test = window(myts, start=2011)
+```
+
+b. Check that your data have been split appropriately by producing the following plot.
+
+```{r}
+autoplot(myts) +
+  autolayer(myts.train, series="Training") +
+  autolayer(myts.test, series="Test")
+```
+
+c. Calculate forecasts using `snaive` applied to `myts.train`.
+
+```{r}
+# Seasonal Naive Method
+fc = snaive(myts.train)
+fc
+```
+
+d. Compare the accuracy of your forecasts against the actual values stored in `myts.test`.
+
+```{r}
+accuracy(fc, myts.test)
+```
+The mean errors for both training and test sets are far away from 0, so the model is not a very good fit.The RMSE and MAE for both sets are close which means the model does not overfit or underfit. 
+
+e. Check the residuals. Do the residuals appear to be uncorrelated and normally distributed?
+
+```{r}
+checkresiduals(fc)
+```
+
+There are a few very large absolute value of residuals from 2000 to 2006. The histogram is right skewed and the mean is different from 0. 7 of the 36 spikes in the Acf (more than 5%) fall outside the acceptable boundary, so this is not a white noise series. The Ljung-Box test
+returns a p value less than 0.05, so we reject the null hypothesis that the time series is not autocorrelated. Overall, this does not seem to be a good model to use for forecasting from this dataset.
+
+f. How sensitive are the accuracy measures to the training/test split?
+
+To check for sensitivity, let us split the data differently. I will choose 2000 as end point for the train set as the residuals seem to show more variations after that year. 
+
+```{r}
+#Split into train and test
+myts.train1 = window(myts, end=c(2006,12))
+myts.test1 = window(myts, start=2007)
+
+fc = snaive(myts.train1)
+
+accuracy(fc, myts.test1)
+
+```
+
+We see that the RMSE and MAE has increased significantly for the test set, so the accuracy measures seem to be very sensitive to the point of split.
