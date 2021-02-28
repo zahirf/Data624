@@ -1,0 +1,152 @@
+---
+title: 'Data 624 Homework 3 Decomposition'
+author: "Farhana Zahir"
+date: "2/28/2021"
+output:
+  html_document:
+    code_folding: show
+    css: ./style.css
+    toc: yes
+    toc_float: yes
+---
+*Textbook: Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia.*
+
+```{r message=F, warning=F}
+#Load packages
+library(fpp2)
+library(scales)
+library(ggplot2)
+library(seasonal) # for X11
+library(gridExtra)
+```
+
+### Exercise 6.2 
+
+***a. Plot the time series of sales of product A. Can you identify seasonal fluctuations and/or a trend-cycle?***
+
+```{r}
+autoplot(plastics) + 
+   labs(title="Monthly Sales - Product A", x="Time", y="Sales") + 
+   scale_y_continuous(labels= dollar_format(scale=1)) +
+   theme_minimal()
+
+# Checking seasonality
+ggseasonplot(plastics, year.labels = TRUE) + 
+   labs(title="Monthly Sales - Product A", x="Time", y="Sales") + 
+   scale_y_continuous(labels= dollar_format(scale=1)) +  
+   theme_minimal()
+
+#Subseries
+ggsubseriesplot(plastics, year.labels= TRUE) + 
+   labs(title="Monthly Sales - Product A", x="Time", y="Sales") + 
+   scale_y_continuous(labels= dollar_format(scale=1)) +  
+   theme_minimal()
+```
+The chart displays strong seasonality and an upward trend.There is no evidence of cyclic behavior. The seasonal plot shows that from January sales starts getting increased until it peaks between August and September. From September, it starts decreasing again.
+
+***b. Use a classical multiplicative decomposition to calculate the trend-cycle and seasonal indices.***
+
+```{r}
+plastics %>% 
+   decompose(type='multiplicative') %>% 
+   autoplot() + 
+   labs(title='Classic Multiplicative Decomposition', x='Year') +
+   theme_minimal()
+```
+
+***c. Do the results support the graphical interpretation from Part A?***
+
+The decomposition results do support the graphical interpretation from Part A. The seasonal component can be clearly seen and seem to be constant. The trend component is increasing on a linear basis except for the values after Year 5.
+
+***d. Compute and plot the seasonally adjusted data.***
+
+```{r}
+season.adj <- plastics %>% 
+   decompose(type='multiplicative')
+autoplot(plastics, series="Data")+ 
+   autolayer(seasadj(season.adj), series=" Seasonally Adjusted") +
+   labs(title="Seasonally Adjusted versus Original Data")+
+   theme_minimal()
+```
+
+The seasonally adjusted plot displays variations caused by an events affecting sales rather than the seasonality.This can be particularly helpful with identifying factors affecting sales other than seasons.
+
+
+***e. Change one observation to be an outlier (e.g., add 500 to one observation), and recompute the seasonally adjusted data. What is the effect of the outlier?***
+
+```{r}
+#Adding 500 to the 26th value 
+plastics1 <- plastics
+plastics1[26] <- plastics1[26]+500
+
+#Seasonally adjusted plot
+season.adj <- plastics1 %>% 
+   decompose(type='multiplicative')
+autoplot(plastics1, series="Data")+ 
+   autolayer(seasadj(season.adj), series=" Seasonally Adjusted") +
+   labs(title="Seasonally Adjusted vs Original Data")+
+   theme_minimal()
+
+#Decompsition
+plastics1 %>% 
+   decompose(type='multiplicative') %>% 
+   autoplot()+
+   theme_minimal()
+
+```
+
+The 26th point shows a spike in the data part of the decomposition chart. In the trend and seasonal charts, we do not see much of its effect as it has been positioned to be shown in the remainder part of the decomposition chart.
+
+The spike can be clearly seen in the Seasoanlly adjusted versus original data chart. 
+
+***f. Does it make any difference if the outlier is near the end rather than in the middle of the time series?***
+
+```{r}
+# Adding outlier to the end
+plastics2 <- plastics
+plastics2[52] <- plastics2[52] + 500
+
+# Seasonally adjusted plot
+season.adj <- plastics2 %>% 
+   decompose(type='multiplicative')
+autoplot(plastics2, series="Data")+ 
+   autolayer(seasadj(season.adj), series=" Seasonally Adjusted") +
+   labs(title="Seasonally Adjusted vs Original Data")+
+   theme_minimal()
+
+#Decompsition
+plastics2 %>% 
+   decompose(type='multiplicative') %>% 
+   autoplot()+
+   theme_minimal()
+```
+
+When the outlier is near the end of the time series, the seasonally adjusted values also increase towards the end of the series. With the outlier in the middle of the series, the seasonally adjusted values show a spike in the middle as well. It looks like outliers are reflected in the seasonally adjusted values (and not in the seasonal component itself) that we can see in the decomposition chart. 
+
+
+### Exercise 6.3
+
+***Recall your retail time series data (from Exercise 3 in section 2.10). Decompose the series using X11. Does it reveal any outliers, or unusual features that you had not noticed previously.***
+
+```{r}
+#Read the excel file
+retail <- readxl::read_excel("retail.xlsx", skip = 1) 
+#Select column and convert into time series object
+retail_x11 <- ts(retail[,8], frequency=12, start=c(1982,4)) 
+# Autoplot
+autoplot(retail_x11)+
+   labs(title = "New South Wales - Department Stores", subtitle = "X11 Decomposition", 
+       x = "Year")+
+   theme_minimal()
+```
+
+```{r}
+retail_x11 %>% 
+   seas(x11="") %>% 
+   autoplot() + 
+   labs(title=" X11 Decomposition")+
+   theme_minimal()
+```
+
+
+The trend and seasonality remain consistent with the past analysis. The trend is upward with some fluctuations. There are some significant spikes and drops in the remainder chart, mostly at 1983 and 2001 points. The basic autoplot did not pick up these trends that we can clearly see in the decomposition plot.
