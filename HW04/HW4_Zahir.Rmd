@@ -1,0 +1,215 @@
+---
+title: 'Data 624 Homework 4 Data Preprocessing/Overfitting'
+author: "Farhana Zahir"
+date: "3/07/2021"
+output:
+  html_document:
+    code_folding: 'show'
+    df_print: paged
+    toc: yes
+    toc_float: yes
+---
+
+*Textbook: Max Kuhn and Kjell Johnson. Applied Predictive Modeling. Springer, New York, 2013.*
+
+```{r warning=F, message=F}
+# Required R packages
+library(mlbench)
+library(tidyverse)
+library(GGally)
+library(caret)
+library(VIM)
+library(rcompanion)
+library(corrplot)
+library(e1071)
+library(naniar)
+```
+
+### Exercise 3.1
+
+The [UC Irvine Machine Learning Repository](http://archive.ics.uci.edu/ml/index.html) contains a data set related to glass identification. The data consist of 214 glass samples labeled as one of seven class categories. There are nine predictors, including the refractive index and percentages of eight elements: Na, Mg, Al, Si, K, Ca, Ba, and Fe.
+
+The data can be accessed via:
+
+```{r}
+data(Glass)
+str(Glass)
+```
+***(a) Using visualizations, explore the predictor variables to understand their distributions as well as the relationships between predictors.***
+
+Let us look at the descriptive statistics first.
+
+```{r}
+summary(Glass)
+```
+Distributions of predictor variables
+
+```{r}
+par(mfrow = c(3,3))
+for (i in 1:9){
+  plotNormalDensity(
+    Glass[,i], main = sprintf("Variable %s", names(Glass)[i]))
+}
+```
+
+The plots show the actual distributions and a superimposed normal curve for each predictor, making it easy to compare the two. None of the predictors follow a normal distribution. Na, Al, and Si are close to normal, but they exhibit fat tails. Mg and K are bimodal. Ca, Ba, Fe, and K are positively skewed.
+
+Relationships between predictors
+
+```{r message=F}
+# Correlation 
+Glass2 = select(Glass, -Type)
+Glass %>% select(-Type) %>% 
+          cor() %>% 
+          corrplot(., method='color', type="upper", order="hclust", 
+                      addCoef.col = "black", tl.col="black",  diag=FALSE)
+```
+
+The relationship between RI and Ca shows a highly positive correlation. There are a few variables with moderate correlation values.
+
+
+***(b) Do there appear to be any outliers in the data? Are any predictors skewed?***
+
+```{r}
+#Boxplots for outlier
+Glass2 %>%
+  gather() %>% 
+  ggplot(aes(value)) +
+    facet_wrap(~ key, scales = "free") +
+    geom_boxplot(outlier.size=1, outlier.colour='blue', alpha=0.3)+
+    theme_minimal()  
+```
+
+There are a number of outliers for each predictor variable, except for Mg. Ba and Ca appears to have the most outliers. Let us calculate skewness to identify extreme outliers. 
+
+```{r}
+#Skewness
+Glass2[-10] %>% 
+  apply(2, skewness)
+```
+The rule of thumb seems to be: If the skewness is between -0.5 and 0.5, the data are fairly symmetrical. If the skewness is between -1 and – 0.5 or between 0.5 and 1, the data are moderately skewed. If the skewness is less than -1 or greater than 1, the data are highly skewed. 6 out of 9 variables exhibit a high skew. K, Ba and Ca lead the way with extreme skews.
+
+
+***(c) Are there any relevant transformations of one or more predictors that might improve the classification model?***
+
+Box-Cox and PCA transformations may be used for variables that are skewed in order to improve the classification model.
+
+```{r}
+
+glass_transformed = preProcess(Glass2, method = c('BoxCox', 'center', 'scale', 'pca'))
+glass_transformed
+```
+```{r}
+#Collating the transformed data
+prediction = predict(glass_transformed, Glass)
+```
+
+```{r}
+par(mfrow = c(3,3))
+for (i in 2:8){
+  plotNormalDensity(
+    prediction[,i], main = sprintf("Variable %s", names(prediction)[i]))
+}
+```
+```{r message=F}
+# Correlation 
+par(xpd=TRUE)
+prediction %>% select(-Type) %>% 
+          cor() %>% 
+          corrplot(., method='color', type="upper", order="hclust",mar = c(2, 2, 1, 1), 
+                      addCoef.col = "black", tl.col="black", tl.cex=0.8, tl.pos = "td",                            diag=FALSE)
+```
+
+Refractive index, Na, Al, Si, and Ca were box-cox transformed, and all variables were centered and scaled before applying PCA. After applying the transformations, the density is closer to normal and not heavily skewed, and there is no correlation among the variables.
+
+
+### Exercise 3.2 
+
+The soybean data can also be found at the UC Irvine Machine Learning Repository. Data were collected to predict disease in 683 soybeans. The 35 predictors are mostly categorical and include information on the environmental conditions (e.g., temperature, precipitation) and plant conditions (e.g., left spots, mold growth). The outcome labels consist of 19 distinct classes.
+
+The data can be loaded via:
+
+```{r}
+data(Soybean)
+```
+
+
+***(a) Investigate the frequency distributions for the categorical predictors. Are any of the distributions degenerate in the ways discussed earlier in this chapter?***
+
+
+```{r}
+#Summary
+summary(Soybean[,2:36])
+```
+
+A degenerate distribution (sometimes called a constant distribution) is a distribution of a degenerate random variable — a constant with probability of 1. In other words, a random variable X has a single possible value. Let us plot the categorical value to identify if there is any degenarete.
+
+```{r message=F, warning=F}
+Soybean %>% 
+  gather() %>% 
+  ggplot(aes(value))+facet_wrap(~key, scales = "free")+
+  geom_histogram(stat="count")+
+  theme_minimal()
+```
+
+From above, it looks like "leaf.malf", "lodging", "mycelium", "sclerotia",  "mold.growth", "seed.discolor", "seed.size", "shriveling", "leaf.mild", "int.discolor" might be degenerate.
+
+
+***(b) Roughly 18% of the data are missing. Are there particular predictors that are more likely to be missing? Is the pattern of missing data related to the classes?***
+
+
+```{r}
+#No of missing values
+# Calculate the missing values
+colSums(is.na(Soybean))
+```
+
+Visualize using mice package
+
+```{r warning=F, message=F}
+missing <- aggr(Soybean, col=c('navyblue','yellow'), numbers=TRUE,
+                  sortVars=TRUE, labels=names(Soybean), cex.axis=.7, gap=3,
+                  ylab=c("Histogram of missing data","Pattern"))
+```
+
+82% of the dataset is complete. Hail, sever, seed.tmt and lodging seem to be missing together and account for 17.7% of missing values. Overall, there seems to be a pattern with several variables exhibitng missing values toegther.
+
+
+Pattern related to classes?
+
+```{r message=F, warning=F}
+gg_miss_upset(Soybean) 
+```
+
+
+The plot shows that germ, hail, server, seed.tmt and lodging have missing values together. There clearly is a pattern here.
+
+
+***(c) Develop a strategy for handling missing data, either by eliminating predictors or imputation.***
+
+First, we will remove the near-zero variance predictors using the nearZerovar from caret. The outour is the index of the columns to remove
+
+```{r}
+nearZeroVar(Soybean,freqCut = 95/5, uniqueCut = 10)
+```
+The columns to remove are leaf.mild, mycelium and sclerota
+
+```{r}
+paste(colnames(Soybean)[19])
+paste(colnames(Soybean)[26])
+paste(colnames(Soybean)[28])
+```
+The rest of the data are MNAR (Missing Not at Random). The 18% rows containing missing rows may be omitted or imputed after investigating the nature of the analysis. We can substitute the missing values with mean or median and then test the accuracy of the model to select the best strategy which lead to a better model. Since the data are MNAR, I will select the kNN method to impute the missing values
+
+**Imputation with kNN**
+
+```{r message=F}
+Soybean_imputed <- Soybean %>% 
+  select(-c(mycelium, sclerotia, leaf.mild))%>%
+  kNN()
+
+aggr(Soybean_imputed, main='Missing data')
+```
+
+The dataset is now complete.
+  
