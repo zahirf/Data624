@@ -1,0 +1,530 @@
+---
+title: 'Data 624 Homework 6 ARIMA'
+author: "Farhana Zahir"
+date: "3/28/2021"
+output:
+  html_document:
+    code_folding: show
+    css: ./style.css
+    toc: yes
+    toc_float: yes
+    
+---
+
+*Textbook: Hyndman, R.J., & Athanasopoulos, G. (2018) Forecasting: principles and practice, 2nd edition, OTexts: Melbourne, Australia.*
+
+```{r message=F, warning=F}
+#Load packages
+library(tidyverse)
+library(fpp2)
+library(urca)
+```
+
+
+### Exercise 8.1
+
+Figure 8.31 shows the ACFs for 36 random numbers, 360 random numbers, and 1,000 random numbers.
+
+***a. Explain the differences among these figures. Do they all indicate that the data are white noise?***
+
+<center>
+![Picture 1](C:/Users/zahir/Documents/Data 624/HW6/pic1.png)
+</center>
+
+
+As sample size increases from 30 to 360 to 1000, the autocorrelations approach 0. The ACF bars with the smaller number of samples are taller than the ACF bars with a larger number of samples. All three plots bars withon accepted boundaries and are white noise series.
+
+
+***b. Why are the critical values at different distances from the mean of zero? Why are the autocorrelations different in each figure when they each refer to white noise?***
+
+The critical values are defined to be within $\pm \frac{1.96}{\sqrt{T}}$ where T is the length of the time series. The 95% confidence interval gets narrower as the sample size increases. Thus, as sample size increases, the criteria for qualifying as a white noise series becomes more rigid.
+
+
+### Exercise 8.2
+
+***A classic example of a non-stationary series is the daily closing IBM stock price series (data set `ibmclose`). Use R to plot the daily closing prices for IBM stock and the ACF and PACF. Explain how each plot shows that the series is non-stationary and should be differenced.***
+
+
+```{r}
+ggtsdisplay(ibmclose, 
+            main = 'Daily Closing IBM Stock Price', 
+            ylab = 'Sales', xlab = 'Time')
+```
+
+The Acf plot shows autocorrelation and non stationarity with strong persistence over the 26 lags.The PAcf plot shows strong autocorrelation at or near the 1st lag. There seems to be trends in the data, specifically a downward trend starting from around 210 to 270 days.
+
+We will first difference the series and check again.
+
+```{r}
+ggtsdisplay(diff(ibmclose), 
+            main = 'Daily Closing IBM Stock Price', 
+            ylab = 'Sales', xlab = 'Time')
+```
+
+The persistence in the Acf goes away, but few of the correlation values are beyond acceptable boundaries. The transformed seriesis still not a white noise
+
+
+### Exercise 8.3
+
+***For the following series, find an appropriate Box-Cox transformation and order of differencing in order to obtain stationary data.***
+
+#### usnetelec
+
+
+```{r}
+ggtsdisplay(usnetelec, main = "Annual US Net Electricity Generation", ylab = "Bn kWh", xlab = "Year")
+```
+
+The series has an upward trend. The PACF suggests that the 1st lag is close to one, and all other PACF are close to zero, so other lags are autocorrelation.This is a non-stationary time series. 
+
+```{r}
+# boxcox transformation
+lambda <- BoxCox.lambda(usnetelec)
+print(paste0('The suggested lambda value for usnetelec is ',lambda))
+#plot
+ggtsdisplay(BoxCox(usnetelec, lambda), main='After Transformation', ylab = 'Bn kWh', xlab = 'Year')
+```
+There does not appear to be any noticeable changes and that might be due to the lack of seasonality. Let us check for required differencing.
+
+
+```{r}
+#Required Differencing
+ndiffs(BoxCox(usnetelec, lambda))
+```
+
+```{r}
+#At Second difference
+temp<-usnetelec %>% diff(2)
+temp%>% ur.kpss() %>% summary()
+ggtsdisplay(temp, main='Transformation at Second Difference', ylab = 'Bn kWh', xlab = 'Year')
+```
+
+Applying the unit root test on the time series returns a test statistic is smaller than the 1% critical value. Thus, the second differencing of the data is stationary. 
+
+
+#### usgdp
+
+```{r}
+ggtsdisplay(usgdp, main = 'Quarterly US GDP', ylab = 'GDP', xlab = 'Year')
+```
+
+The time series has an upward trend and is non stationery.
+
+```{r}
+# boxcox transformation
+lambda <- BoxCox.lambda(usgdp)
+print(paste0('The suggested lambda value for us is ',lambda))
+#plot
+ggtsdisplay(BoxCox(usgdp, lambda), main='After Transformation', ylab = 'GDP', xlab = 'Year')
+```
+
+```{r}
+#Required Differencing
+ndiffs(BoxCox(usgdp, lambda))
+```
+
+```{r}
+#At first difference
+temp<-usgdp %>% diff(1)
+temp%>% ur.kpss() %>% summary()
+ggtsdisplay(temp, main='Quarterly US GDP at First Difference', ylab = 'GDP', xlab = 'Year')
+```
+
+It seems like data is not stationary at first difference as per the ACF plot and the value is t statistic is more than the 1% critical value.
+
+
+#### mcopper
+
+```{r}
+ggtsdisplay(mcopper, main = 'Monthly copper price', ylab = 'Price', xlab = 'Year')
+```
+
+The series has upward and downward trends. There is also slight seasonality. This is a non-stationary time series.
+
+```{r}
+# boxcox transformation
+lambda <- BoxCox.lambda(mcopper)
+print(paste0('The suggested lambda value for us is ',lambda))
+#plot
+ggtsdisplay(BoxCox(mcopper, lambda), main='After Transformation', ylab = 'Price', xlab = 'Year')
+```
+
+```{r}
+#Required Differencing
+ndiffs(BoxCox(mcopper, lambda))
+```
+
+The ndiff suggests that for time series to be made stationary, the number of differences required is 1. 
+
+
+
+```{r}
+mcopper %>% diff(differences = 1) %>% ur.kpss() %>% summary()
+ggtsdisplay(diff(mcopper, differences = 1), main = "Monthly Copper Prices", ylab = "Price", xlab = "Year")
+```
+
+There is now no seasonality in the series. Boxcox transformation straightened out the variations to a great extent. The data can be seen to be stationary after 1964. The test statistic is smaller than the 1% critical value, suggesting the data has been transformed to stationary. 
+
+
+#### enplanements
+
+```{r}
+ggtsdisplay(enplanements, main = 'Monthly US Domestic Enplanements', ylab = 'USD mn', xlab = 'Year')
+```
+
+```{r}
+ggseasonplot(enplanements)
+```
+
+The series shows seasonality and also an upward trend. This is a non-stationary series with a large drop in 2002. BoxCox transformation was not able to smooth out the variations. 
+
+```{r}
+# boxcox transformation
+lambda <- BoxCox.lambda(enplanements)
+print(paste0('The suggested lambda value for us is ',lambda))
+#plot
+ggtsdisplay(BoxCox(enplanements, lambda), main='After Transformation', ylab = 'USD mn', xlab = 'Year')
+```
+
+```{r}
+#Required Differencing
+ndiffs(BoxCox(enplanements, lambda))
+```
+
+```{r}
+temp<-BoxCox(enplanements, lambda)
+temp<-enplanements%>% diff(12) %>% diff(1)
+temp%>% ur.kpss() %>% summary()
+ggtsdisplay(temp, main = 'After differencing', ylab = 'USD mn', xlab = 'Year')
+```
+
+A seasonal differencing using lag 12 is done, followed by another differencing of lag 1. The data seems stationary with a t statistic value less than the 1% critical value.The unusual drop in 2002 is still present when the time series is differenced. 
+
+
+#### visitors
+
+```{r}
+ggtsdisplay(visitors, main = 'Monthly Australian Short-Term Overseas Vistors', ylab = 'No of visitors', xlab = 'Year')
+```
+
+The series shows seasonality and an upward trend. It is non-stationary.
+
+```{r}
+# boxcox transformation
+lambda <- BoxCox.lambda(visitors)
+print(paste0('The suggested lambda value for us is ',lambda))
+#plot
+ggtsdisplay(BoxCox(visitors, lambda), main='After Transformation', ylab = 'No of visitors', xlab = 'Year')
+```
+
+```{r}
+ggseasonplot(visitors)
+```
+
+Boxcox transformation has made the series a little more smooth than before.
+
+
+```{r}
+#Required Differencing
+ndiffs(BoxCox(visitors, lambda))
+```
+
+```{r}
+temp<-BoxCox(visitors, lambda)
+temp<-temp %>% diff(12) %>% diff(1) 
+temp %>% ur.kpss() %>% summary()
+ggtsdisplay(temp, main = 'Monthly Australian Short-Term Overseas Vistors', 
+            ylab = 'No of Vistors', xlab = 'Year')
+```
+A seasoanl differencing is done followed by another differencing. The acf shows that most values are within acceptable boundaries. A t value less than 1% critical value shows that the Boxcox transformed data is now staionary.
+
+
+### Exercise 8.5
+
+***For your retail data (from Exercise 3 in Section 2.10), find the appropriate order of differencing (after transformation if necessary) to obtain stationary data.***
+
+```{r}
+retail <- readxl::read_excel('retail.xlsx', skip=1)
+myts <- ts(retail[,"A3349627V"], frequency = 12, start=c(1982,4))
+ggtsdisplay(myts, main="LIquor Retail Turnover in New South Wales")
+```
+
+```{r}
+ggseasonplot(myts)
+```
+
+This time series shows seasonality and an upward trend, as depicted in the time series. It is a non-stationary time series. 
+
+Let us check after doing a Boxcox transformation.
+
+```{r}
+lambda <- BoxCox.lambda(myts)
+temp <- BoxCox(myts, lambda)
+temp %>% ggtsdisplay(main = 'After Boxcox transformation', xlab = 'Year', ylab = 'Sales')
+```
+
+The variations are smoother, but it is still not stationary as per Acf plot.The data before 1990, with smaller variability, was stretched, while after the year 2000, with larger variability, were diminished.
+
+```{r}
+ndiffs(temp)
+```
+
+```{r}
+temp<-temp %>% diff(12) %>% diff(1) 
+temp %>% ur.kpss() %>% summary()
+ggtsdisplay(temp, main = 'After Boxcox transformation and differencing', xlab = 'Year', ylab = 'Sales')
+```
+
+A seasonal differencing is done on the Boxcox transformed data, along with another round of differencing. Most of the autocorrelations are within acceptable boundaries. The test statistic from the unit test is smaller than the 1% critical value. The series is now stationary.
+
+
+### Exercise 8.6
+
+***Use R to simulate and plot some data from simple ARIMA models.***
+
+***a. Use the following R code to generate data from an AR(1) model with $\phi_1 = 0.6$ and $\sigma^2 = 1$. The process starts with $y_1 = 0$.***
+
+```{r}
+y = ts(numeric(100))
+e = rnorm(100)
+for(i in 2:100)
+  y[i] = 0.6*y[i-1] + e[i]
+```
+
+
+***b. Produce a time plot for the series. How does the plot change as you change $\phi_1$?***
+
+We will use a negative, 0 and positive value for $\phi$
+
+```{r}
+y2 <- ts(numeric(100))
+y3 <- ts(numeric(100))
+y4 <- ts(numeric(100))
+
+for(i in 2:100){
+    y2[i] <- -0.5*y2[i-1] + e[i]
+    y3[i] <- 0*y3[i-1] + e[i]
+    y4[i] <- 0.2*y4[i-1] + e[i]
+}
+```
+
+
+```{r}
+plt = autoplot(y) + labs(title = '0.6 Phi')
+acf = ggAcf(y) + labs(title = 'Acf 0.6 Phi')
+gridExtra::grid.arrange(plt,acf, ncol = 2)
+```
+
+```{r}
+plt = autoplot(y4) + labs(title = '0.5 Phi')
+acf = ggAcf(y4) + labs(title = 'Acf 0.5 Phi')
+gridExtra::grid.arrange(plt,acf, ncol = 2)
+```
+
+```{r}
+plt = autoplot(y3) + labs(title = '0.0 Phi')
+acf = ggAcf(y3) + labs(title = 'Acf 0.0 Phi')
+gridExtra::grid.arrange(plt,acf, ncol = 2)
+```
+
+```{r}
+plt = autoplot(y2) + labs(title = '-0.5 Phi')
+acf = ggAcf(y2) + labs(title = 'Acf -0.5 Phi')
+gridExtra::grid.arrange(plt,acf, ncol = 2)
+```
+
+As $\phi_1$ goes towards zero, either from positive or negative values, the series starts to approach a white noise, and the variations are smoother as the values tend to oscillate more evenly around the mean.
+
+***c. Write your own code to generate data from an MA(1) model with $\theta_1 = 0.6$ and $\sigma^2=1$.***
+
+```{r}
+ma1_model = function(theta, sigma, sample){
+  y = ts(numeric(sample))
+  e = rnorm(sample, sigma)
+  for(i in 2:sample)
+    y[i] = theta*e[i-1] + e[i]
+  return(y)
+}
+```
+
+```{r}
+y<-ma1_model(0.6, 1, 100)
+```
+
+
+***d. Produce a time plot for the series. How does the plot change as you change $\theta_1$?***
+
+We will use -0.5, 0 and 0.2 as values for $\theta_1$
+
+```{r}
+theta = c(-0.5, 0, 0.2, 0.6)
+sigma = 1
+sample = 100
+for (i in 1:4){
+  y = ma1_model(theta[i], sigma, sample)
+  plt = autoplot(y) + labs(title = sprintf("MA1 theta = %0.1f", theta[i]))
+  acf = ggAcf(y) + labs(title = 'Acf')
+  gridExtra::grid.arrange(plt,acf, ncol = 2)
+}
+```
+
+The observations are similar to the AR(1) model. When $\theta_1$ moves towards 0, eithe from a positive or negative value, there are less fluctuations and the values tend to oscillate more evenly around the mean. The series also shows less autocorrelations and becomes a white noise series.
+
+***e. Generate data from an ARMA(1,1) model with $\phi_1=0.6$, $\theta_1=0.6$ and $\sigma^2=1$.***
+
+```{r}
+set.seed(420)
+phi = 0.6
+theta = 0.6
+sigma = 1
+y = ts(numeric(100))
+e = rnorm(1000, sigma)
+for(i in 2:100)
+  y[i] = phi*y[i-1] + theta*e[i-1] + e[i]
+```
+
+```{r}
+plt = autoplot(y) + labs(y = 'y', title = 'ARMA(1,1), phi=0.6, theta=0.6, sigma=1')
+acf = ggAcf(y) + labs(y = "y", title = 'Acf')
+gridExtra::grid.arrange(plt, acf, ncol = 2)
+```
+
+***f. Generate data from an AR(2) model with $\phi_1=-0.8$, $\phi_2=0.3$ and $\sigma^2=1$. (Note that these parameters will give a non-stationary series.)***
+
+```{r}
+set.seed(300)
+phi_1 = -0.8
+phi_2 = 0.3
+sigma = 1
+y1 = ts(numeric(100))
+e = rnorm(100, sigma)
+for(i in 3:100)
+  y1[i] = phi_1*y1[i-1] + phi_2*y1[i-2] + e[i]
+```
+
+```{r}
+plt1 = autoplot(y1) + labs(y = 'y', title = 'AR(2), phi_1=-0.8, phi_2=0.3, sigma=1')
+acf1 = ggAcf(y1) + labs(y = "y", title = 'Acf')
+gridExtra::grid.arrange(plt1, acf1, ncol = 2)
+```
+
+For a time series to be stationary, the AR(2) model requires that 
+
+$-1<\phi_2<1, \phi_1+\phi_2<1,\phi_2-\phi_1<1.$
+
+These particular values of phi resultes in a non-stationary series.
+
+***g. Graph the latter two series and compare them.***
+
+```{r}
+ggtsdisplay(y, main = 'ARMA(1,1), phi_1 = 0.6, theta_1 = 0.6')
+ggtsdisplay(y1, main = 'AR(2), phi_1 = -0.8, phi_2 = 0.3')
+```
+
+The ARMA(1,1) processes show geometric decay in the ACF and the decay is significant until the first lag. The AR(2) model shows an the amplitude of the curve that increases exponentially over time. The ACF oscillates between positive and negative values of autocorrelation because $\phi_1$ is negative.
+ 
+ 
+### Exercise 8.7
+
+***Consider `wmurders`, the number of women murdered each year (per 100,000 standard population) in the United States.***
+
+***a. By studying appropriate graphs of the series in R, find an appropriate ARIMA(p,d,q) model for these data.***
+
+```{r}
+ggtsdisplay(wmurders, main="Total number of women murdered each year per 100,000")
+```
+The series shows an upward trend and there is no seasonality. The Pacf shows a first lag of almost 1, and the rest of the lags are within acceptable boundaries. Boxcox transformation is not needed here. No of differencing required is 2.
+
+```{r}
+# Number of difference required
+ndiffs(wmurders)
+```
+
+```{r}
+#Unit root test at second difference
+wmurders %>% diff(differences=2) %>% ur.kpss()%>%summary()
+```
+
+The test statistic is well within the 1% critical value with 2 levels of differencing.
+
+```{r}
+#Plot at second difference
+ggtsdisplay(diff(wmurders, differences=2), main = "At second difference")
+```
+
+The PAcf plot shows exponentially decaying and there is a significant spike at lag 1, but no spikes beyond that, so p=1. No of differencing required is 2, so d=2. The Acf shows a spike beyond acceptable boundary at lag 2, so q=2. The best ARIMA model should be ARIMA(1,2,2).
+
+
+***b. Should you include a constant in the model? Explain.***
+
+We should not include a constant as there is no drift in the series.
+
+***c. Write this model in terms of the backshift operator.***
+
+Based on the text: *https://otexts.com/fpp2/non-seasonal-arima.html*
+
+\[
+(1 - \phi_1 B)(1 - B)^2 y_t = (1 + \theta_1 B + \theta_2 B^2) \epsilon_t
+\]
+
+***d. Fit the model using R and examine the residuals. Is the model satisfactory?***
+
+```{r}
+(mfit = Arima(wmurders, order = c(1,2,2)))
+checkresiduals(mfit)
+```
+
+The Acf plot shows values within acceptable boundaries. The histogram shows almost normally distributed residuals. Also, based on the Ljung-Box test, the residuals are not distinguishable from a white noise series with a p−value greater  than 0.05. The model seems to be satisfactory.
+
+***e. Forecast three times ahead. Check your forecasts by hand to make sure that you know how they have been calculated.***
+
+Using R, the forecast threes times ahead is:
+
+```{r}
+forecast(mfit, h=3)
+```
+
+By "hand", the forecast three times ahead is:
+
+\begin{equation}
+\begin{aligned}
+(1 - \phi_1B)(1 - B     )^2 y_t = (1 + \theta_1 B + \theta_2 B^2) \epsilon_t \\
+(1 - 2B + B^2 + \phi_1 B + 2\phi_1 B^2 - \phi_1 B^3)y_t = (1 + \theta_1 B + \theta_2 B^2) \epsilon_t \\
+y_t - 2y_{t-1} + y_{t-2} + \phi_1y_{t-1} + 2 \phi_1 y_{t-2} - \phi_1 y_{t-3} = \epsilon_t + \theta_1 \epsilon_{t-1} + \theta_2 \epsilon_{t-2} \\
+\end{aligned}
+\end{equation}
+
+In order to hand calculate, we use $\phi_1 = -0.7677$, $\theta_1 = -0.2812$, $\theta_2 = -0.4977$, and $\epsilon_t = 0$ from below:
+
+```{r}
+mfit
+```
+
+The length of the series is 55. Using the last three residuals, the formula and calculations for the next three year forecast are:
+
+```{r}
+epsilon=mfit$residuals
+forecast1 = (2-0.7677)*wmurders[55] - (1-2*0.7677)*wmurders[54] - 0.7677*wmurders[53] - 0.2812*epsilon[55] - 0.4977*epsilon[54]
+forecast2 = (2-0.7677)*forecast1 - (1-2*0.7677)*wmurders[55] - 0.7677*wmurders[54] - 0.2812*0 - 0.4977*epsilon[55]
+forecast3 = (2-0.7677)*forecast2 - (1-2*0.7677)*forecast1 - 0.7677*wmurders[55] - 0.2812*0 - 0.4977*0
+print(forecast1)
+print(forecast2)
+print(forecast3)
+```
+
+The values are very close to those calculated by R.
+
+
+***f. Create a plot of the series with forecasts and prediction intervals for the next three periods shown.***
+
+```{r}
+autoplot(forecast(mfit, h=3), PI = TRUE)
+```
+
+***g. Does `auto.arima()` give the same model you have chosen? If not, which model do you think is better?***
+
+```{r}
+auto.arima(wmurders)
+```
+
+auto.arima returns a 1,2,1 model which is different from above. The AIC for ARIMA(1,2,2) is -6.753, while the AIC for the auto ARIMA, ARIMA(1,2,1), is -6.880. Therefore the ARIMA(1,2,2) model seems to fit better for this dataset.
