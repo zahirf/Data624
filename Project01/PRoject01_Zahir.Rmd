@@ -1,0 +1,509 @@
+---
+title: 'Data 624 Project01'
+author: "Farhana Zahir"
+date: "3/28/2021"
+output:
+  html_document:
+    code_folding: show
+    css: ./style.css
+    toc: yes
+    toc_float: yes
+---
+
+
+# Part A ATM
+
+## Problem
+
+In part A, I want you to forecast how much cash is taken out of 4 different ATM machines for May 2010. The data is given in a single file. The variable ‘Cash’ is provided in hundreds of dollars, other than that it is straight forward. I am being somewhat ambiguous on purpose to make this have a little more business feeling. Explain and demonstrate your process, techniques used and not used, and your actual forecast. I am giving you data via an excel file, please provide your written report on your findings, visuals, discussion and your R code via an RPubs link along with the actual.rmd file Also please submit the forecast which you will put in an Excel readable file.
+
+Part B consists of a simple dataset of residential power usage for January 1998 until December 2013. Your assignment is to model these data and a monthly forecast for 2014. The data is given in a single file. The variable ‘KWH’ is power consumption in Kilowatt hours, the rest is straight forward. Add this to your existing files above.
+
+```{r message=F, warning=F}
+library(tidyverse)
+library(fpp2)
+library(plotly)
+library(readxl)
+library(knitr)
+library(kableExtra)
+```
+
+
+
+First step is to import the data. 
+
+```{r}
+atm <- readxl::read_excel('ATM624Data.xlsx')
+atm$DATE<-lubridate::ymd(atm$DATE)
+```
+
+Let us check for missing values
+
+```{r warning=F}
+# Checking for missing values
+colSums(is.na(atm))
+```
+There are 14 blanks in ATM and cash is also blank for the same records. These records need to be removed as we cannot do much with these.
+
+There are 5 records for ATM 1 and 2 which do not have cash data, and these will also be removed as the no of missing cases is insignificant.
+
+```{r warning=F}
+# Remove empty rows with no data
+atm <- atm[complete.cases(atm), ]
+colSums(is.na(atm))
+```
+## Data Visualize
+
+Let us have a look at the data
+
+```{r warning=F, message=F}
+ggplot(atm, aes(DATE, Cash)) + geom_line() + facet_grid(ATM~., scales="free") +
+  labs(title="ATM Withdrawals", y="Hundreds of dollars", x="") +
+  theme_minimal()
+```
+
+ATM3 has only 3 values and all other values are 0s. ATM 4 seems to have an outlier that we will be replacing with the median value.
+
+
+Let us split the data into the four ATMs.
+
+```{r}
+# Splitting the data
+atm1 <- atm %>% filter(ATM == 'ATM1')
+atm2 <- atm %>% filter(ATM == 'ATM2')
+atm3 <- atm %>% filter(ATM == 'ATM3')
+atm4 <- atm %>% filter(ATM == 'ATM4')
+```
+
+
+## Models ATM1
+
+I converted the time series to weekly. There seems to be weekly seasonality in the transaction level with withdrawals dipping on Mondays and Wednesdays. I will check the ACF and PACF plots, run ndiffs, nsdiffs and Boxcox.lambda functions to see if any differencing is recommended and what type of model would be suitable.
+
+```{r}
+atm1_ts <- ts(atm1$Cash, frequency = 7)
+ggseasonplot(atm1_ts)
+ggtsdisplay(atm1_ts, main="ATM 1 Transactions - Weekly")
+```
+
+```{r}
+ndiffs(atm1_ts)
+```
+
+```{r}
+nsdiffs(atm1_ts)
+```
+```{r}
+atm1_lambda <- BoxCox.lambda(atm1_ts)
+atm1_lambda
+```
+Let us plot the data after a first order seasonal difference and boxcox transformation.
+
+```{r}
+atm1_ts %>% BoxCox(atm1_lambda) %>% diff(lag=7) %>% ggtsdisplay()
+```
+
+Most of the weekly seasonality has been eliminated and we are left with an almost stationery time series. There is however a significant spike at lag 7. 
+
+### Holt Winters
+
+We are using the additive seasonality model as the data hints towards that.
+
+```{r}
+atm1_holt <- atm1_ts %>% hw(h=31, seasonal="additive", 
+                           damped=TRUE, lambda = atm1_lambda)
+autoplot(atm1_holt) + 
+  theme_minimal()
+data.frame(accuracy(atm1_holt))
+checkresiduals(atm1_holt)
+```
+The residuals plot looks ok. The Ljung Box test with very small p values hints there is still some autocorrelation in the data. The forecast plot does not look too bad either although the confidence intervals look very wide.
+
+
+### ETS
+
+```{r}
+atm1_ets <- atm1_ts %>% ets(model="ZZZ", lambda = atm1_lambda)
+autoplot(atm1_ets)
+autoplot(forecast(atm1_ets, h=31)) + theme_minimal()
+data.frame(accuracy(atm1_ets))
+checkresiduals(atm1_ets)
+```
+
+The ets method has returned a slightly better RMSE.
+
+### ARIMA
+
+```{r}
+atm1_arima <- auto.arima(atm1_ts)
+autoplot(forecast(atm1_arima, h=31)) + theme_minimal()
+data.frame(accuracy(atm1_arima))
+checkresiduals(atm1_arima)
+```
+Let us compare the results from the 3 models
+
+
+```{r}
+results <- data.frame(rbind(accuracy(atm1_holt), accuracy(atm1_ets), accuracy(atm1_arima)))
+rownames(results) <- c("Holt-Winter's", "ETS", "ARIMA(0,0,1)(0,1,1)[7]")
+results
+```
+
+The arima method has the lowest RMSE. Looking at the p value from the Ljung-Box, the series is consistent with white noise. We will therefore use arima to predict cash withdrawal from ATM1.
+
+
+## Models ATM2
+
+```{r}
+atm2_ts <- ts(atm2$Cash, frequency = 7)
+ggseasonplot(atm2_ts)
+ggsubseriesplot(atm2_ts) +
+  labs(title = "ATM #2 Cash Withdrawal", subtitle ="1 May, 2009 to 30 April, 2010",
+       x = "Days of the Week") 
+ggtsdisplay(atm2_ts, main="ATM 2 Transactions - Weekly")
+```
+
+There seems to be weekly seasonality with ATM 2 also. We will follow the same procedure as ATM1. 
+
+```{r}
+ndiffs(atm2_ts)
+nsdiffs(atm2_ts)
+atm2_lambda <- BoxCox.lambda(atm2_ts)
+atm2_lambda
+```
+Both first order differencing and seasonal differencing is recommended for this data series. Boxcox transformation with a lambda value of 0.68 will done. We will look at the data after these transformations.
+
+```{r}
+atm2_ts %>% BoxCox(atm2_lambda) %>% diff(1)%>%diff(lag=7) %>% ggtsdisplay()
+```
+first order differencing results in too many spikes outside the critical values, so we will skip that
+
+```{r}
+atm2_ts %>% BoxCox(atm2_lambda) %>% diff(lag=7) %>% ggtsdisplay()
+```
+
+The seasonality is clear from the chart, we will test the same three models as ATM1.
+
+### Holt Winters
+
+```{r}
+atm2_holt <- atm2_ts %>% hw(h=31, seasonal="additive", damped=TRUE, 
+                            lambda = atm2_lambda)
+autoplot(atm2_holt) + theme_minimal()
+data.frame(accuracy(atm2_holt))
+checkresiduals(atm2_holt)
+```
+
+### ETS
+
+```{r}
+atm2_ets <- atm2_ts %>% ets(model="ZZZ", lambda =atm2_lambda)
+autoplot(atm2_ets) + theme_minimal()
+autoplot(forecast(atm2_ets, h=31)) + theme_minimal()
+data.frame(accuracy(atm2_ets))
+checkresiduals(atm2_ets)
+```
+
+
+### Arima
+
+```{r}
+atm2_arima <- auto.arima(atm2_ts, lambda = atm2_lambda)
+autoplot(forecast(atm2_arima, h=31)) + theme_minimal()
+
+data.frame(accuracy(atm2_arima))
+checkresiduals(atm2_arima)
+```
+
+Comparing the results
+
+```{r}
+results <- data.frame(rbind(accuracy(atm2_holt), accuracy(atm2_ets),
+                            accuracy(atm2_arima)))
+rownames(results) <- c("Holt-Winter's", "ETS", "ARIMA(3,0,3)(0,1,1)[7]")
+results
+```
+
+Again Arima seems to be the winner. The RMSE is the lowest and p value from Ljung Box is consistent with a white noise. We will be using arima to predict ATM2 withdrawals.
+
+
+## Models ATM 3
+
+```{r}
+atm3_ts <- ts(atm3$Cash, frequency = 7)
+ggseasonplot(atm3_ts)
+ggtsdisplay(atm3_ts, main="ATM 3 Transactions - Weekly")
+```
+
+ATM3 has only 3 valid cash withdrawal data points and the rest of the rows are filled with 0s. The only prediction we can do here is a mean of these 3 points but that does not really mean anything in business decision-making. We will therefore not attempt any of the models for ATM3.
+
+```{r}
+plot_ly(y = atm3$Cash, type='box', name="Cash Transactions - ATM3")
+```
+
+
+## Models ATM4
+
+
+
+We have seen that there is an outlier value in ATM 4. We will replace this value with the median value before proceeding.
+
+```{r}
+summary(atm4$Cash)
+```
+
+```{r}
+# Replace max value with median
+atm4$Cash[atm4$Cash==max(atm4$Cash)] <- median(atm4$Cash, na.rm = TRUE)
+```
+
+
+Let us visualize the series now.
+
+```{r}
+atm4_ts <- ts(atm4$Cash, frequency = 7)
+ggseasonplot(atm4_ts)
+ggsubseriesplot(atm4_ts) +
+  labs(title = "ATM #4 Cash Withdrawal", subtitle ="1 May, 2009 to 30 April, 2010",
+       x = "Days of the Week") 
+ggtsdisplay(atm4_ts, main="ATM 4 Transactions - Weekly")
+```
+
+Again, there is weekly seasonality and we will follow the same procedures as ATM1 and 2.
+
+```{r}
+ndiffs(atm4_ts)
+nsdiffs(atm4_ts)
+atm4_lambda <- BoxCox.lambda(atm4_ts)
+atm4_lambda
+```
+
+Only Boxcox transformation with lambda 0.45 is suggested for this dataset. However, taking out the weekly seasoanlity results in a transformation closer to white noise, so we are doing that.
+
+
+```{r}
+atm4_ts %>% BoxCox(atm4_lambda) %>% diff(lag=7)%>%ggtsdisplay()
+```
+
+### Holt Winters
+
+```{r}
+atm4_holt <- atm4_ts %>% hw(h=31, seasonal="additive", damped=TRUE, 
+                            lambda = atm2_lambda)
+autoplot(atm4_holt) + theme_minimal()
+data.frame(accuracy(atm4_holt))
+checkresiduals(atm4_holt)
+```
+
+### ETS
+
+```{r}
+atm4_ets <- atm4_ts %>% ets(model="ZZZ", lambda =atm4_lambda)
+autoplot(atm4_ets) + theme_minimal()
+autoplot(forecast(atm4_ets, h=31)) + theme_minimal()
+data.frame(accuracy(atm4_ets))
+checkresiduals(atm4_ets)
+```
+
+### Arima
+
+```{r}
+atm4_arima <- auto.arima(atm4_ts, seasonal = TRUE, lambda = atm4_lambda)
+autoplot(forecast(atm4_arima, h=31)) + theme_minimal()
+
+data.frame(accuracy(atm4_arima))
+checkresiduals(atm4_arima)
+```
+
+Comparing the results
+
+```{r}
+results <- data.frame(rbind(accuracy(atm4_holt), accuracy(atm4_ets),
+                            accuracy(atm4_arima)))
+rownames(results) <- c("Holt-Winter's", "ETS", "ARIMA(0,0,1)(2,0,0)[7]")
+results
+```
+
+Holt Winter's seems to be the best model for this one with the lowest RMSE. The residuals plot looks the best for Holt, along with the ACF and PACF with no values outside critical range. We will use Holt to predict ATM4 cash withdrawals.
+
+## Predictions
+
+We will forecast the withdrawals from the 4 ATMS separately.
+
+ATM 1
+
+```{r}
+temp<-forecast(atm1_arima, h=5)
+temp1<-data.frame(temp)
+temp1
+#xlsx::write.xlsx(temp1, 'atm1_forecast.xlsx', row.names=FALSE, col.names=TRUE)
+```
+
+ATM 2
+
+```{r}
+temp<-forecast(atm2_arima, h=5)
+temp2<-data.frame(temp)
+temp2
+#xlsx::write.xlsx(temp2, 'atm2_forecast.xlsx', row.names=FALSE, col.names=TRUE)
+```
+
+ATM 3
+
+```{r}
+atm3_mean<-meanf(atm3_ts, h=31) #forecast using mean
+temp<-forecast(atm3_mean, h=5)
+temp3<-data.frame(temp)
+temp3
+#xlsx::write.xlsx(temp3, 'atm3_forecast.xlsx', row.names=FALSE, col.names=TRUE)
+```
+
+ATM 4
+
+```{r}
+
+temp<-forecast(atm4_holt, h=5)
+temp4<-data.frame(temp)
+temp4
+#xlsx::write.xlsx(temp4, 'atm4_forecast.xlsx', row.names=FALSE, col.names=TRUE)
+```
+### Conclusion
+
+The missing values for all datasets were removed. Cash was missing for only 5 data points for ATM1 and ATM 2 and those were removed. ATM 4 had an outlier which was replaved with median value. Mean was used to forecast ATM 3 withdrawals as there were only 3 datapoints. For the rest, Holt, ETS and ARIMA was tested and transformation was done using suggested by ndiff and nsdiff. Transformed data were visualized to make final decisions. RMSE and Ljung tests were used to chose the models. Values for next 5 weeks were forecasted using best model, along with upper and lower points for 80% and 95% confidence levels.
+
+
+
+# Part B - Forecasting power
+
+## Problem
+
+Part B consists of a simple dataset of residential power usage for January 1998 until December 2013. Your assignment is to model these data and a monthly forecast for 2014. The data is given in a single file. The variable ‘KWH’ is power consumption in Kilowatt hours, the rest is straight forward. Add this to your existing files above.
+
+
+## Data Exploration
+
+Let us read in the data first
+
+```{r}
+power <- read_excel("ResidentialCustomerForecastLoad-624.xlsx")
+summary(power)
+head(power) %>% kable() %>% kable_styling(full_width = FALSE)
+```
+
+There is one missing value in the dataset.
+
+We will replace the missing value with median and convert to a timeseries object.
+
+```{r}
+# Replacing missing value with median
+power$KWH[is.na(power$KWH)] = median(power$KWH, na.rm=TRUE)
+
+# Converting the dataframe into timeseries object
+power_ts <- ts(power$KWH, start=c(1998,1), frequency = 12)
+power_ts
+```
+
+We can see that the data is recorded on a monthly basis from 1998 till 2013. We are asked to forecast for 12 months in 2014.
+
+Let us visualize the data
+
+```{r}
+# Plot the series
+ggtsdisplay(power_ts, main="Before Transformation, Monthly Power Consumption")
+```
+There seems to be one outlier in the dataset.That outlier is the minimum value and we will replace it with the median value.
+
+```{r}
+power$KWH[which.min(power$KWH)] = median(power$KWH, na.rm=TRUE)
+power_ts <- ts(power$KWH, start=c(1998,1), frequency = 12)
+```
+
+Let us look at the seasonal plots and subseries plots.
+
+```{r}
+ggseasonplot(power_ts, polar=T)
+ggsubseriesplot(power_ts)
+```
+
+There is clear monthly seasonality in the data with Kwh dropping in May and Nov.
+
+```{r}
+power_ts %>%
+  stl(t.window=13, s.window="periodic", robust=TRUE) %>%
+  autoplot()
+```
+
+The seasonality is additive and there is a clear upward trend.
+
+We will use ndiff and nsdiff to find recommended transformations.
+
+```{r}
+ndiffs(power_ts)
+nsdiffs(power_ts)
+power_lambda <- BoxCox.lambda(power_ts)
+power_lambda
+```
+
+We will do the transformations and look at the series.
+
+```{r}
+power_ts %>% BoxCox(power_lambda) %>% diff() %>% diff(lag=12) %>% ggtsdisplay()
+```
+The data is more stationery now. We will try the Holt Winters Additive seasonal method, ets and arima on this one also as it worked well with the ATM data.
+
+
+### Holt Winters 
+
+```{r}
+power_holt <- power_ts %>% hw(h=12, seasonal="additive", damped=TRUE, 
+                           lambda = power_lambda)
+autoplot(power_holt) + theme_minimal()
+data.frame(accuracy(power_holt))
+checkresiduals(power_holt)
+```
+
+### Ets
+
+```{r}
+power_ets <- power_ts %>% ets(model="ZZZ", lambda = power_lambda)
+autoplot(power_ets) + theme_minimal()
+autoplot(forecast(power_ets, h=12)) + theme_minimal()
+data.frame(accuracy(power_ets))
+checkresiduals(power_ets)
+```
+
+
+### Auto Arima
+
+```{r}
+power_arima <- auto.arima(power_ts, seasonal = TRUE, lambda = power_lambda)
+autoplot(forecast(power_arima, h=12)) + theme_minimal()
+data.frame(accuracy(power_arima))
+checkresiduals(power_arima)
+```
+
+### Hybrid
+
+This is an interesting method and combines ets and arima models.
+
+```{r}
+library(forecastHybrid)
+power_hybrid<-power_ts%>%hybridModel(model = 'ae', lambda = power_lambda)
+autoplot(forecast(power_hybrid, h=12)) + theme_minimal()
+data.frame(accuracy(power_hybrid))
+checkresiduals(power_hybrid)
+```
+
+
+Comparing the results, the hybrid model results in the lowest RMSE. The ACF resembles a white noise and the residuals look almost normal. We will therefore be using this hybrid model to forecast the power data.
+
+```{r}
+test <- forecast(power_hybrid, h=12)
+test1 <- data.frame(test)
+#xlsx::write.xlsx(test1, 'POwer 12 months prediction.xlsx')
+```
+
+### Conclusion
+
+The power dataset had monthly data from 1998 to 2013. We were asked to predict for 12 months in 2014. There was one missing value and one outlier, both replaced by the median values. Different techniques that included seasonality were tested and finally the hybrid model with the lowest RMSE was used to predict the series.
+
