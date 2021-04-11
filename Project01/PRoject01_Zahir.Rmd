@@ -507,3 +507,8 @@ test1 <- data.frame(test)
 
 The power dataset had monthly data from 1998 to 2013. We were asked to predict for 12 months in 2014. There was one missing value and one outlier, both replaced by the median values. Different techniques that included seasonality were tested and finally the hybrid model with the lowest RMSE was used to predict the series.
 
+# Reference
+
+1) https://robjhyndman.com/hyndsight/forecast-combinations/
+2) https://otexts.com/fpp2/
+
