@@ -1,0 +1,379 @@
+---
+title: 'Data 624 Homework 7'
+author: "Farhana Zahir"
+date: "4/17/2021"
+output:
+  html_document:
+    code_folding: show
+    css: ./style.css
+    toc: yes
+    toc_float: yes
+---
+
+
+*Textbook: Max Kuhn and Kjell Johnson. Applied Predictive Modeling. Springer, New York, 2013.*
+
+
+```{r warning=F, message=F}
+#Load packages
+library(tidyverse)
+library(AppliedPredictiveModeling)
+library(caret)
+library(elasticnet)
+library(glmnet)
+library(kableExtra)
+library(corrplot)
+library(VIM)
+library(RANN)
+```
+
+## Exercise 6.2
+
+### (a) 
+
+Start R and use these commands to load the data:
+
+```{r}
+data(permeability)
+summary(permeability)
+```
+
+The matrix fingerprints contain the 1,107 binary molecular predictors for the 165 compounds, while permeability contains permeability response.
+
+### (b) 
+
+***The fingerprint predictors indicate the presence or absence of substructures of a molecule and are often sparse meaning that relatively few of the molecules contain each substructure. Filter out the predictors that have low frequencies using the `nearZeroVar` function from the `caret` package. How many predictors are left for modeling?***
+
+```{r}
+predictors = nearZeroVar(fingerprints)
+fingerprints1 = fingerprints[,-predictors]
+dim(fingerprints1)[2]
+```
+
+719 columns have been removed using `nearZeroVar` function. 388 predictors are left for modeling. Let us look at the pairwise correlations.
+
+```{r}
+correlations <- cor(fingerprints1)
+plot(correlations)
+```
+
+We will remove highly correlated predictors with threshold 0.90. 
+
+```{r}
+highCorr <- findCorrelation(correlations, cutoff = .9)
+fingerprints1 <- fingerprints1[, -highCorr]
+correlations <- cor(fingerprints1)
+corrplot(correlations, order = "hclust")
+```
+
+
+### (c) 
+
+***Split the data into a training and a test set, pre-process the data, and tune a PLS model. How many latent variables are optimal and what is the corresponding resampled estimate of $R^2$?***
+
+```{r}
+#adding permeability data to last column
+df <- as.data.frame(fingerprints1) %>% mutate(permeability = permeability)
+
+#Split the data
+set.seed(425)
+in_train <- createDataPartition(df$permeability, times = 1, p = 0.7, list = FALSE)
+train <- df[in_train, ]
+test <- df[-in_train, ]
+```
+
+```{r}
+#run PLS model
+set.seed(525)
+
+pls_model <- train(permeability ~ ., data = train, method = "pls",
+              center = TRUE,trControl = trainControl("cv", number = 10),
+              tuneLength = 25, preProcess= c('center','scale'))
+pls_model
+plot(pls_model, main = "R-squared Error of PLS Model")
+```
+
+```{r}
+pls_model$results %>%
+  filter(ncomp == pls_model$bestTune$ncomp) 
+```
+The number of components resulting in the smallest root mean squared error is 2. It has RMSE = 12,30, R2 = 0.49, and MAE = 8.74. Therefore 2 variables account for the largest portion of the variability in the data than all other latent variables.
+
+
+### (d) 
+
+***Predict the response for the test set. What is the test set estimate of $R^2$?***
+
+```{r}
+set.seed(526)
+#Predictions
+predictions <- predict(pls_model, test)
+#Model performance 
+results <- data.frame(Model = "PLS",
+                      RMSE = caret::RMSE(predictions, test$permeability),
+                      Rsquared = caret::R2(predictions, test$permeability),
+                      MAE = caret::MAE(predictions, test$permeability))
+results
+```
+The test set estimate of $R^2$ is 0.31.
+
+### (e) 
+
+***Try building other models discussed in this chapter. Do any have better predictive performance?***
+
+PCR Model
+
+```{r}
+set.seed(527)
+
+pcr_model <- train(permeability ~ ., data = train, method = "pcr",
+              center = TRUE,trControl = trainControl("cv", number = 10),
+              tuneLength = 25, preProcess= c('center','scale'))
+pcr_model
+plot(pcr_model, main = "R-squared Error of PCR Model")
+```
+
+```{r}
+set.seed(528)
+#Predictions
+predictions_pcr <- predict(pcr_model, test)
+#Model performance 
+results_pcr <- data.frame(Model = "PCR",
+                      RMSE = caret::RMSE(predictions_pcr, test$permeability),
+                      Rsquared = caret::R2(predictions_pcr, test$permeability),
+                      MAE = caret::MAE(predictions_pcr, test$permeability))
+results_pcr
+```
+
+Ridge Regression
+
+```{r message=F, warning=F}
+ridgeGrid<-data.frame(.lambda=seq(0,1, length=15))
+set.seed(529)
+
+#Ridge Method Fit
+ridge_model <- train(permeability ~ ., data = train, method='ridge', metric='Rsquared',
+                   tuneGrid = ridgeGrid,
+                   trControl = trainControl(method = 'cv'), preProcess = c('center','scale'))
+ridge_model
+plot(ridge_model, main = "R-squared Error of Ridge Model")
+```
+
+```{r}
+set.seed(530)
+#Predictions
+predictions_ridge <- predict(ridge_model, test)
+#Model performance 
+results_ridge <- data.frame(Model = "Ridge",
+                      RMSE = caret::RMSE(predictions_ridge, test$permeability),
+                      Rsquared = caret::R2(predictions_ridge, test$permeability),
+                      MAE = caret::MAE(predictions_ridge, test$permeability))
+results_ridge
+```
+
+Lasso Regression
+
+```{r}
+set.seed(531)
+lasso_model <- train(permeability ~ ., data = train, method='lasso', metric='Rsquared', 
+                   tuneGrid = data.frame(.fraction = seq(0,0.5, by=0.05)),
+                   trControl = trainControl(method='cv'),
+                   preProcess = c('center','scale'))
+
+lasso_model
+plot(lasso_model, main = "R-squared Lasso Model")
+```
+
+
+```{r}
+set.seed(532)
+#Predictions
+predictions_lasso <- predict(lasso_model, test)
+#Model performance 
+results_lasso <- data.frame(Model = "Lasso",
+                      RMSE = caret::RMSE(predictions_lasso, test$permeability),
+                      Rsquared = caret::R2(predictions_lasso, test$permeability),
+                      MAE = caret::MAE(predictions_lasso, test$permeability))
+results_lasso
+```
+
+
+Elastic Net
+
+```{r}
+set.seed(533)
+
+elasticnet_model <- train(permeability ~ ., data = train, method ='enet', metric='Rsquared',
+                        tuneGrid = expand.grid(.fraction=seq(0,1,by=0.1),
+                        .lambda=seq(0,1,by=0.1)),
+                        trControl=trainControl(method='cv'),
+                        preProcess=c('center','scale'))
+
+elasticnet_model
+plot(elasticnet_model, main = "R-square Elastic Net Model")
+```
+
+
+```{r}
+set.seed(534)
+#Predictions
+predictions_elasticnet <- predict(elasticnet_model, test)
+#Model performance 
+results_elasticnet <- data.frame(Model = "Elastic Net",
+                      RMSE = caret::RMSE(predictions_elasticnet, test$permeability),
+                      Rsquared = caret::R2(predictions_elasticnet, test$permeability),
+                      MAE = caret::MAE(predictions_elasticnet, test$permeability))
+results_elasticnet
+```
+
+
+**Comparison of the models**
+
+```{r}
+
+compmod<-rbind(results, results_pcr, results_ridge, results_lasso, results_elasticnet)
+#compmod<-comp[-1]
+compmod%>%kable(row.names = F)%>% kable_styling(full_width = FALSE)
+```
+
+
+From the table, PLS Model is doing better if we see the values of RMSE and MAE compared to other models. Notice that $R^2$ is lower in PLS but $R^2$ it can be increased with adding even an insignificant predictor. Therefore, PLS is a good model to choose from here.
+
+### (f)
+
+***Would you recommend any of your models to replace the permeability laboratory experiment?***
+
+The $R^2$ value seems to be low for a physical process so I would not use this. 
+
+
+
+## Exercise 6.3
+
+***A chemical manufacturing process for a pharmaceutical product was discussed in Sect. 1.4. In this problem, the objective is to understand the relationship between biological measurements of the raw materials (predictors), measurements of the manufacturing process (predictors), and the response of product yield. Biological predictors cannot be changed but can be used to assess the quality of the raw material before processing. On the other hand, the manufacturing process predictors can be changed in the manufacturing process. Improving product yield by 1% will boost revenue by approximately one hundred thousand dollars per batch:***
+
+### (a) 
+
+Start R and use these commands to load the data:
+
+```{r}
+data(ChemicalManufacturingProcess)
+```
+
+The matrix process Predictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.
+
+### (b)
+
+A small percentage of cells in the predictor set contain missing values. Use an imputation function to fill in these missing values (e.g., see Sect. 3.8).
+
+```{r message=F, warning=F}
+library(Amelia)
+missmap(ChemicalManufacturingProcess)
+```
+
+
+The missing values are insignificant as a % and seem to be missing at random. I will be using kNN to impute the missing values.
+
+```{r}
+pre_process <-preProcess(ChemicalManufacturingProcess[, -c(1)], method = "knnImpute")
+chemical_imp <- predict(pre_process, ChemicalManufacturingProcess[, -c(1)])
+```
+
+```{r}
+print('No of missing values is')
+sum(is.na(chemical_imp))
+```
+
+### (c) 
+
+***Split the data into a training and a test set, pre-process the data, and tune a model of your choice from this chapter. What is the optimal value of the performance metric?***
+
+It is better to filter out pairs with high correlation first, we use a threshold of 0.90.
+
+```{r}
+correlations <- cor(chemical_imp)
+highCorr <- findCorrelation(correlations, cutoff = .9)
+chemical_imp <- chemical_imp[, -highCorr]
+```
+
+We will center and scale the data
+
+```{r}
+(pre.process = preProcess(chemical_imp, method = c("BoxCox", "center", "scale")))
+```
+
+
+Split the data
+
+```{r}
+set.seed(675)
+#Splitting data into training and test datasets
+splitt <- createDataPartition(ChemicalManufacturingProcess$Yield, p=0.7, list=FALSE)
+X_train <- chemical_imp[splitt, ]
+y_train <- ChemicalManufacturingProcess$Yield[splitt]
+
+X_test <- chemical_imp[-splitt, ]
+y_test <- ChemicalManufacturingProcess$Yield[-splitt]
+```
+
+We will use the PLS model here.
+
+```{r}
+model_pls <- train(X_train, y_train, method='pls', metric='RMSE',
+                   tuneLength=20, trControl = trainControl(method='cv'))             
+
+model_pls
+```
+
+```{r}
+plot(model_pls)
+```
+
+The optimal value of ncomp chosen is 4 and that gives the lowest RMSE at 1.186537 and $R^2$ of 0.58.
+
+
+### (d) 
+
+***Predict the response for the test set. What is the value of the performance metric and how does this compare with the resampled performance metric on the training set?***
+
+```{r}
+pls_predict <- predict(model_pls, X_test)
+postResample(pls_predict, y_test)
+```
+
+The RMSE has gone up slightly to 1.209. $R^2$ remains almost the same. 
+
+##### (e) 
+
+***Which predictors are most important in the model you have trained? Do either the biological or process predictors dominate the list?***
+
+```{r message=F, warning=F}
+plot(varImp(model_pls), top =10)
+
+```
+
+
+The Manufacturing Processes dominate the list for top 20 in terms of variable importance, with a few biological materials showing up in the list. The top 2 are ManufacturingProcess32	and ManufacturingProcess13.
+
+### (f) 
+
+***Explore the relationships between each of the top predictors and the response. How could this information be helpful in improving yield in future runs of the manufacturing process?***
+
+```{r}
+model_pls$finalModel$coefficients
+```
+
+According to the coefficients above, ManufacturingProcess32 has the highest positive relationship followed by ManufacturingProcess36 (negative impact).
+
+`ManufacturingProcess32` improved the yield tremendously, and it has the highest, positive correlation than the other variables in the model. The `ManufacturingProcess32` coefficient in the regression equation is 0.445 which shows the units the yield increases for every additional unit of `ManufacturingProcess32`. 
+
+```{r}
+cor(ChemicalManufacturingProcess$Yield,
+    ChemicalManufacturingProcess$ManufacturingProcess32)
+```
+
+From the negative coefficients, `ManufacturingProcess13` affected the yield tremendously, and it has a negative correlation. The `ManufacturingProcess13` coefficient in the regression equation is -0.35 which shows the yield decrease for every additional unit of `ManufacturingProcess13`. 
+
+```{r}
+cor(ChemicalManufacturingProcess$Yield,
+    ChemicalManufacturingProcess$ManufacturingProcess13)
+```
