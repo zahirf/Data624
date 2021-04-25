@@ -1,0 +1,363 @@
+---
+title: 'Data 624 Homework 7'
+author: "Farhana Zahir"
+date: "4/25/2021"
+output:
+  html_document:
+    code_folding: show
+    css: ./style.css
+    toc: yes
+    toc_float: yes
+---
+
+
+*Textbook: Max Kuhn and Kjell Johnson. Applied Predictive Modeling. Springer, New York, 2013.*
+
+```{r message=F, warning=F}
+#Load packages
+library(tidyverse)
+library(AppliedPredictiveModeling)
+library(mlbench)
+library(caret)
+library(kableExtra)
+```
+
+## Exercise 7.2 
+
+Friedman (1991) introduced several benchmark data sets create by simulation. One of these simulations used the following nonlinear equation to create data:
+
+\[y = 10 sin(\pi x_1x_2) + 20(x_3 − 0.5)^2 + 10x_4 + 5x_5 + N(0, \sigma^2)\]
+
+where the x values are random variables uniformly distributed between [0, 1] (there are also 5 other non-informative variables also created in the simulation). The package `mlbench` contains a function called `mlbench.friedman1` that
+simulates these data: 
+
+
+```{r}
+set.seed(200)
+trainingData = mlbench.friedman1(200, sd = 1)
+## We convert the 'x' data from a matrix to a data frame
+## One reason is that this will give the columns names.
+trainingData$x = data.frame(trainingData$x)
+## Look at the data using
+featurePlot(trainingData$x, trainingData$y)
+## or other methods.
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to
+## estimate the true error rate with good precision:
+testData = mlbench.friedman1(5000, sd = 1)
+testData$x = data.frame(testData$x)
+```
+
+```{r}
+## or other methods.
+
+## This creates a list with a vector 'y' and a matrix
+## of predictors 'x'. Also simulate a large test set to
+## estimate the true error rate with good precision:
+testData <- mlbench.friedman1(5000, sd = 1)
+testData$x <- data.frame(testData$x)
+```
+
+Tune several models on these data. For example:
+
+### kNN Model
+
+```{r}
+set.seed(522)
+knn_model <- train(trainingData$x, trainingData$y,
+                   method="knn", preProc = c("center", "scale"),
+                   tuneLength = 10,
+                   trControl = trainControl(method="cv"))
+
+knn_model
+```
+
+```{r}
+knn_model$bestTune
+```
+
+```{r}
+#Predict
+knn_pred <- predict(knn_model, testData$x) 
+
+#Performance using postResample
+knn_PR <- postResample(knn_pred, testData$y)
+knn_PR
+```
+
+
+We will do SVM, Mars and Neural Network models
+
+### SVM Model
+
+```{r}
+#SVM Model
+set.seed(523)
+svm_model <- train(trainingData$x, trainingData$y,
+                   method='svmRadial', preProc = c('center', 'scale'),
+                   tuneLength = 10,
+                   trControl = trainControl(method="cv"))
+
+svm_model
+```
+
+```{r}
+svm_model$bestTune
+```
+
+```{r}
+#Predict
+svm_pred <- predict(svm_model, testData$x) 
+
+#Performance using postResample
+svm_PR <- postResample(svm_pred, testData$y)
+svm_PR
+```
+
+### Multivariate Adaptive Regression Spline (MARS)
+
+```{r}
+#MARS
+grid <- expand.grid(.degree = 1:2, .nprune = 2:38) 
+mars_model = train(x = trainingData$x, 
+                  y = trainingData$y, 
+                  method = 'earth', 
+                  tuneGrid = grid, 
+                  trControl = trainControl(method = 'cv', 
+                                           number = 10))
+mars_model
+```
+
+```{r}
+mars_model$bestTune
+```
+
+
+```{r}
+#Predict
+mars_pred <- predict(mars_model, testData$x) 
+
+#Performance using postResample
+mars_PR <- postResample(mars_pred, testData$y)
+mars_PR
+```
+
+### Neural network
+
+```{r}
+set.seed(524)
+#Neural network
+neural_grid <- expand.grid(.decay=c(0, 0.01, 0.1, 0.5, 0.9),
+                        .size=c(1, 10, 15, 20),
+                        .bag=FALSE)
+
+nnet_model <- train(x = trainingData$x,
+                   y = trainingData$y,
+                   method = "avNNet",
+                   tuneGrid = neural_grid,
+                   preProc = c("center", "scale"),
+                   trace=FALSE,
+                   linout=TRUE,
+                   maxit=500)
+nnet_model
+```
+
+```{r}
+nnet_model$bestTune
+```
+```{r}
+#Predict
+nnet_pred <- predict(nnet_model, testData$x) 
+
+#Performance using postResample
+nnet_PR <- postResample(nnet_pred, testData$y)
+nnet_PR
+```
+
+
+***Which models appear to give the best performance? Does MARS select the informative predictors (those named X1–X5)?***
+
+```{r}
+comp<-data.frame(rbind(knn_PR,svm_PR, mars_PR, nnet_PR ))
+comp %>% kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = F)
+```
+                 
+From the table above, Mars has the highest $r^2$ and explains the highest portion of the variability with X1-X5 informative predictors. The RMSE and MAE are also lowest for the Mars model.
+
+```{r}
+varImp(mars_model)
+```
+
+MARS did select the informative predictors with X1 as the most important variable and X3 as the least important variable.
+
+
+## Exercise 7.3
+
+***Exercise 6.3 describes data for a chemical manufacturing process. Use the same data imputation, data splitting, and pre-processing steps as before and train several nonlinear regression models.***
+
+
+```{r}
+data(ChemicalManufacturingProcess)
+```
+
+The matrix process Predictors contains the 57 predictors (12 describing the input biological material and 45 describing the process predictors) for the 176 manufacturing runs. yield contains the percent yield for each run.
+
+Impute missing values
+
+
+```{r}
+pre_process <-preProcess(ChemicalManufacturingProcess[, -c(1)], method = "knnImpute")
+chemical_imp <- predict(pre_process, ChemicalManufacturingProcess[, -c(1)])
+```
+
+Remove pairs with correlation abobe 0.90
+
+```{r}
+correlations <- cor(chemical_imp)
+highCorr <- findCorrelation(correlations, cutoff = .9)
+chemical_imp <- chemical_imp[, -highCorr]
+```
+
+Remove near zero variance
+
+```{r}
+near0 <- nearZeroVar(chemical_imp)
+chemical_imp <- chemical_imp[,-near0]
+```
+
+Split
+
+```{r}
+set.seed(420)
+trainRow <- createDataPartition(ChemicalManufacturingProcess$Yield, p=0.8, list=FALSE)
+train_X <- chemical_imp[trainRow, ]
+train_y <- ChemicalManufacturingProcess$Yield[trainRow]
+test_X <- chemical_imp[-trainRow, ]
+test_y <- ChemicalManufacturingProcess$Yield[-trainRow]
+```
+
+
+
+### kNN model
+
+```{r}
+set.seed(421)
+knn_model <- train(x = train_X,
+                  y = train_y,
+                  method = "knn",
+                  preProc = c("center", "scale"),
+                  tuneLength = 10)
+
+knn_model
+```
+
+### MARS
+
+```{r}
+mars_grid <- expand.grid(.degree=1:2,
+                        .nprune=2:10)
+set.seed(1)
+mars_model <- train(x = train_X,
+                   y = train_y,
+                   method = "earth",
+                   tuneGrid = mars_grid,
+                   preProc = c("center", "scale"))
+
+mars_model
+```
+
+### SVM
+
+```{r}
+set.seed(424)
+svm_model <- train(x = train_X,
+                        y = train_y,
+                        method = "svmRadial",
+                        tuneLength=10,
+                        preProc = c("center", "scale"))
+svm_model
+```
+
+### Neural Network
+
+```{r}
+set.seed(425)
+#Neural Network
+neural_grid <- expand.grid(.decay=c(0, 0.01, 0.1),
+                        .size=c(1, 10, 15, 20),
+                        .bag=FALSE)
+
+nnet_model <- train(x = train_X,
+                        y = train_y,
+                   method = "avNNet",
+                   tuneGrid = neural_grid,
+                   preProc = c("center", "scale"),
+                   trace=FALSE,
+                   linout=TRUE,
+                   maxit=500)
+nnet_model
+```
+
+***(a) Which non-linear regression model gives the optimal resampling and test set performance?***
+
+```{r}
+#Predict
+svm_pred <- predict(svm_model, test_X)
+mars_pred <- predict(mars_model, test_X)
+knn_pred <- predict(knn_model, test_X)
+nnet_pred <- predict(nnet_model, test_X)
+
+#Performance of test data
+svm_rs <- postResample(svm_pred, test_y)
+mars_rs <- postResample(mars_pred, test_y)
+knn_rs <- postResample(knn_pred, test_y)
+nnet_rs <- postResample(nnet_pred, test_y)
+
+comp1 <- data.frame(rbind(svm_rs, mars_rs, knn_rs, nnet_rs))
+comp1 %>% kable() %>% kable_styling()
+```
+
+It looks like the SVM model with an $r^2$ of 70% and lowest RMSE and MAE is the optimal model. 
+
+***(b) Which predictors are most important in the optimal nonlinear regression model? Do either the biological or process variables dominate the list? How do the top ten important predictors compare to the top ten predictors from the optimal linear model?***
+
+```{r message=F, warning=F}
+(svm_imp = varImp(svm_model))
+
+model_pls <- train(x = train_X, y = train_y, method='pls', metric='RMSE',
+                   tuneLength=20, trControl = trainControl(method='cv'))
+(pls_imp = varImp(model_pls))
+```
+
+```{r}
+p1<-plot(svm_imp, top=10, main='SVM')
+p2<-plot(pls_imp, top=10, main='PLS')
+gridExtra::grid.arrange(p1, p2, ncol = 2)
+```
+
+ManufacturingProcess32 dominates both the models. There are 2 biological processes in the top 5 compared to only 1 in the PLS model. Even though the rank of the variables have changed, the top ten list contains the same predictors.
+
+
+***(c) Explore the relationships between the top predictors and the response for the predictors that are unique to the optimal nonlinear regression model. Do these plots reveal intuition about the biological or process predictors and their relationship with yield?***
+
+```{r fig.height=18, fig.width=8}
+temp <- svm_imp$importance
+temp$predictor <- row.names(temp)
+temp <- temp[order(temp$Overall, decreasing = TRUE),]
+temp_v = row.names(temp[1:10,])
+
+par(mfrow = c(5,2))
+
+for (i in 1:10){
+  x = ChemicalManufacturingProcess[,temp_v[i]]
+  y = ChemicalManufacturingProcess$Yield
+  plot(x, y, xlab = temp_v[i], ylab = 'Yield')
+  abline(lm(y~x))
+}
+```
+
+
+The plots show linear relationships between the biological and process predictors and yield. 
+
